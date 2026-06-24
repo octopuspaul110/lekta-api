@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use lekta_api::{config::Config, state::AppState};
 use tokio::{net::TcpListener, signal::{self, unix::SignalKind}};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use axum::{routing::get, Router};
+use axum::{Router, routing::{get, post}};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,13 +32,16 @@ async fn main() -> anyhow::Result<()> {
         ))
     });
 
-    tracing::info!("Application state initialized, starting lekta-api...");
     let port = config.port;
     tracing::info!("Connecting to database and running migrations...");
     let state = AppState::new(config).await?;
+    tracing::info!("Application state initialized, starting lekta-api...");
 
     let app = Router::new()
             .route("/api/v1/health", get(|| async {"ok"}))
+            .route("/api/v1/auth/register", post(lekta_api::auth::handlers::register))
+            .route("/api/v1/auth/login", post(lekta_api::auth::handlers::login))
+            .route("/api/v1/auth/refresh", post(lekta_api::auth::handlers::refresh))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
@@ -64,7 +67,6 @@ async fn shutdown_signal() {
         .recv()
         .await;
     };
-    
 
     tokio::select! {_ = ctrl_c => {}, _ = terminate => {}}
     tracing::info!("Shutdown signal received, finishing in-flight requests...");
