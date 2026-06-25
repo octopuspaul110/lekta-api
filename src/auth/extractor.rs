@@ -13,12 +13,12 @@ pub struct AuthUser {
     pub is_platform_admin: bool
 }
 
-impl FromRequestParts<Appstate> for AuthUser {
+impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
     async fn from_request_parts(
         parts: &mut Parts,
-        state: &Appstate,
+        state: &AppState,
     ) ->  Result<Self, Self::Rejection> {
         let auth_header = parts
             .headers
@@ -36,7 +36,7 @@ impl FromRequestParts<Appstate> for AuthUser {
         let claims = decode_access_token(token, &state.config)?;
 
         let user_id = Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::Unauthorization("Invalid token subject".into()))?;
+            .map_err(|_| AppError::Unauthorized("Invalid token subject".into()))?;
 
         let user = sqlx::query!(
             "
