@@ -42,6 +42,11 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/v1/auth/register", post(lekta_api::auth::handlers::register))
             .route("/api/v1/auth/login", post(lekta_api::auth::handlers::login))
             .route("/api/v1/auth/refresh", post(lekta_api::auth::handlers::refresh))
+            .route("/api/v1/auth/logout", post(lekta_api::auth::handlers::logout))
+            .route("/api/v1/auth/logout-all", post(lekta_api::auth::handlers::logout_all))
+            .route("/api/v1/auth/forgot-password", post(lekta_api::auth::handlers::forgot_password))
+            .route("/api/v1/auth/reset-password", post(lekta_api::auth::handlers::reset_password))
+            .route("/api/v1/auth/verify-email", post(lekta_api::auth::handlers::verify_email))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::{auth::{jwt::encode_access_token, password::{hash_password, verify_password}, refresh_token::{generate_refresh_token, hash_refresh_token}}, error::{AppError, AppResult}, state::AppState};
+use crate::{auth::{extractor::AuthUser, jwt::encode_access_token, password::{hash_password, verify_password}, refresh_token::{generate_refresh_token, hash_refresh_token}}, error::{AppError, AppResult}, state::AppState};
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct RegisterRequest {
@@ -135,7 +135,6 @@ pub async fn register(
         })
     ))
 }
-
 
 pub async fn login(
     State(state): State<AppState>,
@@ -295,4 +294,212 @@ pub async fn refresh(
             expires_in: state.config.access_token_expiry_seconds,
         }
     ))
+}
+
+#[derive(Deserialize)]
+pub struct LogoutRequest {
+    refresh_token: Option<String>,
+}
+
+pub async fn logout(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Json(req): Json<LogoutRequest>
+) -> AppResult<StatusCode> {
+    if let Some(token) = req.refresh_token {
+        let token_hash = hash_refresh_token(&token);
+        sqlx::query!(
+            "
+                UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW()
+                WHERE token_hash = $1 AND revoked = FALSE
+            ",
+            token_hash
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn logout_all(
+    State(state): State<AppState>,
+    auth: AuthUser
+) -> AppResult<StatusCode>{
+    sqlx::query!(
+        "
+            UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW()
+            WHERE user_id = $1 AND revoked = FALSE
+        ",
+        auth.user_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize,Validate)]
+pub struct ForgotPasswordRequest {
+    #[validate(email)]
+    pub email: String,
+}
+
+pub async fn forgot_password(
+    State(state): State<AppState>,
+    Json(req): Json<ForgotPasswordRequest>,
+)-> AppResult<StatusCode> {
+    req.validate()?;
+    let email_lower = req.email.to_lowercase();
+
+    let user = sqlx::query!(
+        "
+            SELECT id FROM users WHERE lower(email) = $1 AND deleted_at IS NULL
+        ",
+        email_lower
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    if let Some(user) = user {
+        let reset_token = generate_refresh_token();
+        let reset_hash = hash_refresh_token(&reset_token);
+        let expires_at = Utc::now() + Duration::hours(1);
+
+        sqlx::query!(
+            "
+                INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+                VALUES ($1, $2, $3)
+            ",
+            user.id, 
+            reset_hash,
+            expires_at
+        )
+        .execute(&state.db)
+        .await?;
+
+        if !state.config.environment.is_production() {
+            tracing::info!(
+                user_id = %user.id,
+                reset_token = %reset_token,
+                "password reset token (DEV ONLY)"
+            );
+        }
+        
+        // email is to be sent via ses
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Validate)]
+pub struct ResetPasswordRequest {
+    pub token: String,
+    #[validate(length(min = 8, max = 128))]
+    pub new_password: String,
+}
+
+pub async fn reset_password(
+    State(state): State<AppState>,
+    Json(req): Json<ResetPasswordRequest>
+) -> AppResult<StatusCode> {
+    req.validate()?;
+    let token_hash = hash_refresh_token(&req.token);
+
+    let token_row = sqlx::query!(
+        "
+            SELECT id, user_id, used, expires_at
+            FROM password_reset_tokens WHERE token_hash = $1
+        ",
+        token_hash
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("Invalid reset token".into()))?;
+
+    if token_row.used {
+        return Err(AppError::Unauthorized("Invalid reset token".into()))?;
+    }
+
+    if token_row.expires_at < Utc::now() {
+        return Err(AppError::Unauthorized("Reset token already used".into()))?;
+    }
+
+    let new_hash = hash_password(&req.new_password)?;
+    
+    let mut tx = state.db.begin().await?;
+
+    sqlx::query!(
+        "UPDATE users SET password_hash = $1 WHERE id = $2",
+        new_hash, token_row.user_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE password_reset_tokens SET used = TRUE, used_at = NOW() WHERE id = $1",
+        token_row.id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "
+            UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW()
+            WHERE user_id = $1 AND revoked = FALSE
+        ",
+        token_row.user_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct VerifyEmailRequest {
+    pub token: String,
+}
+
+pub async fn verify_email(
+    State(state): State<AppState>,
+    Json(req): Json<VerifyEmailRequest>
+) -> AppResult<StatusCode> {
+    let token_hash = hash_refresh_token(&req.token);
+
+    let token_row = sqlx::query!(
+        "
+            SELECT id, user_id, used, expires_at
+            FROM email_verification_tokens
+            WHERE token_hash = $1
+        ",
+        token_hash
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized("Invalid verification token".into()))?;
+
+    if token_row.used {
+        return Err(AppError::Unauthorized("verification token already used".into()))?;
+    }
+
+    if token_row.expires_at < Utc::now() {
+        return Err(AppError::Unauthorized("verification token expired".into()))?;
+    }
+
+    let mut tx = state.db.begin().await?;
+
+    sqlx::query!(
+        "
+            UPDATE email_verification_tokens SET used = TRUE, used_at = NOW() WHERE id = $1
+        ",
+        token_row.id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
