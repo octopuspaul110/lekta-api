@@ -6,10 +6,10 @@ use crate::{config::Config, error::{AppError, AppResult}};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    sub : String,
-    iat : u64,  
-    exp : u64,
-    jti : String
+    pub sub : String,
+    pub iat : u64,  
+    pub exp : u64,
+    pub jti : String
 }
 
 pub fn encode_access_token(user_id : Uuid, config : &Config) -> AppResult<String> {
