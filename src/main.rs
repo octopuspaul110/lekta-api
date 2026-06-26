@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use lekta_api::{config::Config, state::AppState};
 use tokio::{net::TcpListener, signal::{self, unix::SignalKind}};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use axum::{Router, routing::{get, post}};
+use axum::{Router, routing::{delete, get, patch, post}};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -49,6 +49,11 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/v1/auth/verify-email", post(lekta_api::auth::handlers::verify_email))
             .route("/api/v1/workspaces", post(lekta_api::workspaces::handlers::create_workspace))
             .route("/api/v1/workspaces", get(lekta_api::workspaces::handlers::list_my_workspaces))
+            .route("/api/v1/workspaces/{slug}", get(lekta_api::workspaces::handlers::get_workspace))
+            .route("/api/v1/workspaces/{slug}", patch(lekta_api::workspaces::handlers::update_workspace))
+            .route("/api/v1/workspaces/{slug}/transfer-ownership", post(lekta_api::workspaces::handlers::transfer_ownership))
+            .route("/api/v1/workspaces/{slug}", delete(lekta_api::workspaces::handlers::delete_workspace))
+            
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));

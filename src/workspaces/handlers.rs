@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use uuid::Uuid;
 
-use crate::{auth::extractor::AuthUser, error::{AppResult,AppError}, state::AppState, workspaces::types::{PaymentMode, WorkspaceRole}};
+use crate::{auth::extractor::AuthUser, error::{AppError, AppResult}, state::AppState, workspaces::{extractor::{WorkspaceContext, invalidate_workspace_ctx_cache}, types::{PaymentMode, WorkspaceRole}}};
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateWorkspaceRequest {
@@ -204,4 +204,239 @@ pub async fn list_my_workspaces(
         .collect();
 
     Ok(Json(workspaces?))
+}
+
+pub async fn get_workspace(
+    State(state): State<AppState>,
+    ctx: WorkspaceContext,
+) -> AppResult<Json<WorkspaceResponse>> {
+    let row = sqlx::query!(
+        r#"
+            SELECT id, name, slug, description, focus_areas, payment_mode,subscription_status,
+                   avatar_key,cover_image_key, student_count, tutor_count, trial_ends_at,  created_at
+            FROM workspaces
+            WHERE id = $1 AND deleted_at IS NULL
+        "#,
+        &ctx.workspace_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let payment_mode: PaymentMode = serde_json::from_value(serde_json::json!(row.payment_mode))
+        .map_err(|_| AppError::Internal("invalid payment_mode".into()))?;
+
+    Ok(
+        Json(
+            WorkspaceResponse {
+                id: row.id,
+                name: row.name,
+                slug: row.slug,
+                description: row.description,
+                focus_areas: row.focus_areas,
+                payment_mode,
+                subscription_status: row.subscription_status,
+                role: ctx.role,
+            })
+    )
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateWorkspaceRequest {
+    #[validate(length(min = 2, max = 100))]
+    pub name: Option<String>,
+
+    pub description: Option<String>,
+
+    #[validate(regex(path = "SLUG_REGEX"))]
+    pub slug: Option<String>,
+
+    pub focus_areas: Option<Vec<String>>,
+
+    pub settings: Option<serde_json::Value>,
+}
+
+pub async fn update_workspace(
+    State(state): State<AppState>,
+    ctx: WorkspaceContext,
+    Json(req): Json<UpdateWorkspaceRequest>,
+) -> AppResult<Json<WorkspaceResponse>> {
+    req.validate()?;
+
+    if !ctx.role.is_admin_or_above() {
+        return Err(AppError::Forbidden("admin role required".into()));
+    }
+
+    let mut tx = state.db.begin().await?;
+
+    // if slug is changing, check uniqueness and record redirect
+    if let Some(new_slug) = &req.slug {
+        if new_slug != &ctx.slug {
+            let existing = sqlx::query!(
+                "SELECT id FROM workspaces WHERE slug = $1 AND deleted_at IS NULL",
+                new_slug
+            )
+            .fetch_optional(&state.db)
+            .await?;
+            
+            if existing.is_some() {
+                return Err(AppError::Conflict("slug already taken".into()));
+            }
+            sqlx::query!(
+                "
+                INSERT INTO workspace_slug_redirects (old_slug, workspace_id) VALUES ($1, $2)
+                ",
+                ctx.slug,
+                ctx.workspace_id
+            )
+            .execute(&state.db)
+            .await?;
+        }
+    }
+
+    let row = sqlx::query!(
+        r#"
+            UPDATE workspaces
+            SET 
+                name = COALESCE($1, name),
+                description = COALESCE($2, description),
+                slug = COALESCE($3, slug),
+                focus_areas = COALESCE($4, focus_areas),
+                settings = COALESCE($5, settings)
+            WHERE id = $6
+            RETURNING id, name, slug, description, focus_areas, payment_mode, subscription_status
+        "#,
+        req.name,
+        req.description,
+        req.slug,
+        req.focus_areas.as_deref(),
+        req.settings,
+        ctx.workspace_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    
+    // invalidate cache for the requester
+    invalidate_workspace_ctx_cache(&state, ctx.user_id, &ctx.slug).await?;
+
+    let payment_mode: PaymentMode = serde_json::from_value(serde_json::json!(row.payment_mode))
+        .map_err(|_| AppError::Internal("invalid payment_mode".into()))?;
+
+    Ok(Json(
+        WorkspaceResponse { 
+            id: row.id, 
+            name: row.name, 
+            slug: row.slug, 
+            description: row.description, 
+            focus_areas: row.focus_areas, 
+            payment_mode, 
+            subscription_status: row.subscription_status, 
+            role: ctx.role
+        }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferOwnershipRequest {
+    pub new_proprietor_user_id: Uuid,
+}
+
+pub async fn transfer_ownership(
+    State(state): State<AppState>,
+    ctx: WorkspaceContext,
+    Json(req): Json<TransferOwnershipRequest>,
+) -> AppResult<StatusCode> {
+
+    if !matches!(ctx.role, WorkspaceRole::Proprietor) {
+        return Err(AppError::Forbidden("proprietor only".into()));
+    }
+
+    if req.new_proprietor_user_id == ctx.user_id {
+        return Err(AppError::BadRequest("cannot transfer to self".into()));
+    }
+
+    // taget being transferred to has to be an admin in the workspace
+    let target = sqlx::query!(
+        r#"
+        SELECT role FROM workspace_members
+        WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'
+        "#,
+        ctx.workspace_id,
+        req.new_proprietor_user_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("user is not a member".into()))?;
+
+    if target.role != "admin" {
+        return Err(AppError::BadRequest("target must first be an admin to become a proprietor".into()));
+    }
+
+    let mut tx = state.db.begin().await?;
+
+    sqlx::query!(
+        r#"
+        UPDATE workspace_members 
+        set role = 'admin'
+        WHERE workspace_id = $1 AND user_id = $2
+        "#,
+        ctx.workspace_id,
+        ctx.user_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        UPDATE workspace_members
+        SET role = 'proprietor'
+        WHERE workspace_id = $1 AND user_id = $2
+        "#,
+        ctx.workspace_id,
+        req.new_proprietor_user_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    // invalidate cache for both users
+    invalidate_workspace_ctx_cache(&state, ctx.user_id, &ctx.slug).await?;
+    invalidate_workspace_ctx_cache(&state, req.new_proprietor_user_id, &ctx.slug).await?;
+    
+    tracing::info!(
+        workspace_id = %ctx.workspace_id,
+        from_user = %ctx.user_id,
+        to_user = %req.new_proprietor_user_id,
+        "ownership transferred"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+
+pub async fn delete_workspace(
+    State(state): State<AppState>,
+    ctx: WorkspaceContext,
+) -> AppResult<StatusCode> {
+    if !matches!(ctx.role, WorkspaceRole::Proprietor) {
+        return Err(AppError::Forbidden("proprietor only".into()));
+    }
+
+    sqlx::query!(
+        "UPDATE workspaces SET deleted_at = NOW() where id = $1 AND deleted_at IS NULL",
+        ctx.workspace_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    invalidate_workspace_ctx_cache(&state, ctx.user_id, &ctx.slug).await?;
+
+    tracing::info!(
+        workspace_id = %&ctx.workspace_id,
+        deleted_by = %&ctx.user_id,
+        "workspace soft-deleted"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
 }
