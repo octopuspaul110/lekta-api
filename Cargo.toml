@@ -1,5 +1,5 @@
 [package]
-name = "lekta-api"
+name = "lekta_api"
 version = "0.1.0"
 edition = "2021"
 authors = ["Adegbite Paul <padegbite04@gmail.com>"]
@@ -38,8 +38,8 @@ sentry = "0.34"
 sentry-tower = "0.34"
 sentry-tracing = "0.34"
 tera = "1.20"
-validator = { version = "0.18", features = ["derive"] }
-thiserror = "1.0"
+validator = { version = "0.20", features = ["derive"] }
+thiserror = "2.0"
 anyhow = "1.0"
 url = "2.5"
 dotenvy = "0.15"
@@ -51,6 +51,7 @@ rrule = "0.13"
 google-cloud-auth = "0.17"
 google-cloud-token = "0.1"
 mime = "0.3"
+regex = "1"
 [dev-dependencies]
 tokio-test = "0.4"
 reqwest = "0.12"

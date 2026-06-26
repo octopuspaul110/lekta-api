@@ -47,6 +47,8 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/v1/auth/forgot-password", post(lekta_api::auth::handlers::forgot_password))
             .route("/api/v1/auth/reset-password", post(lekta_api::auth::handlers::reset_password))
             .route("/api/v1/auth/verify-email", post(lekta_api::auth::handlers::verify_email))
+            .route("/api/v1/workspaces", post(lekta_api::workspaces::handlers::create_workspace))
+            .route("/api/v1/workspaces", get(lekta_api::workspaces::handlers::list_my_workspaces))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
