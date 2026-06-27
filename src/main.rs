@@ -53,6 +53,16 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/v1/workspaces/{slug}", patch(lekta_api::workspaces::handlers::update_workspace))
             .route("/api/v1/workspaces/{slug}/transfer-ownership", post(lekta_api::workspaces::handlers::transfer_ownership))
             .route("/api/v1/workspaces/{slug}", delete(lekta_api::workspaces::handlers::delete_workspace))
+            .route("/api/v1/workspaces/{slug}/members",
+       get(lekta_api::workspaces::members_handlers::list_members))
+            .route("/api/v1/workspaces/{slug}/members/{user_id}",
+                patch(lekta_api::workspaces::members_handlers::change_member_role).delete(lekta_api::workspaces::members_handlers::remove_member))
+            .route("/api/v1/workspaces/{slug}/invitations",
+                post(lekta_api::workspaces::invitations_handlers::create_invitation).get(lekta_api::workspaces::invitations_handlers::list_invitations))
+            .route("/api/v1/workspaces/{slug}/invitations/{id}",
+                delete(lekta_api::workspaces::invitations_handlers::cancel_invitation))
+            .route("/api/v1/invitations/{token}/accept",
+                post(lekta_api::workspaces::invitations_handlers::accept_invitation))
             
             .with_state(state);
     
