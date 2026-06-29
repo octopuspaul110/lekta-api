@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use uuid::Uuid;
 
-use crate::{auth::extractor::AuthUser, error::{AppError, AppResult}, state::AppState, workspaces::{extractor::{WorkspaceContext, invalidate_workspace_ctx_cache}, types::{PaymentMode, WorkspaceRole}}};
+use crate::{auth::extractor::AuthUser, error::{AppError, AppResult}, state::AppState, workspaces::{extractor::{WorkspaceContext, invalidate_workspace_ctx_cache}, types::{OnboardingStep, PaymentMode, WorkspaceRole}}};
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateWorkspaceRequest {
@@ -22,7 +22,10 @@ pub struct CreateWorkspaceRequest {
     pub focus_areas: Vec<String>,
 
     #[serde(default)]
-    pub payment_mode: Option<PaymentMode>
+    pub payment_mode: Option<PaymentMode>,
+
+    // Optional custom onboarding sequence, If omitted, defaults are applied.
+    pub onboarding_steps: Option<Vec<OnboardingStep>>
     
 }
 
@@ -44,7 +47,6 @@ pub struct WorkspaceResponse {
 }
 
 pub async fn create_workspace(
-
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<CreateWorkspaceRequest>
@@ -81,15 +83,21 @@ pub async fn create_workspace(
     .ok_or_else(|| AppError::Internal("payment_mode serialization failed".into()))?
     .to_string();
 
+    let onboarding_steps = req
+        .onboarding_steps
+        .unwrap_or_else(|| OnboardingStep::default_sequence(&req.name));
+
+    let onboarding_json = serde_json::to_value(&onboarding_steps)?;
+
     // insert workspace into table
     let workspace = sqlx::query!(
         "
         INSERT INTO workspaces (
             id, name, slug, description, focus_areas,
             proprietor_user_id, payment_mode, paystack_subaccount_status,
-            trial_ends_at
+            onboarding_steps,trial_ends_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW() + INTERVAL '14 days')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW() + INTERVAL '14 days')
         RETURNING id, name, slug, description, focus_areas, payment_mode, subscription_status
         ",
         workspace_id,
@@ -99,7 +107,8 @@ pub async fn create_workspace(
         &req.focus_areas,
         auth.user_id,
         payment_mode_str,
-        subaccount_status
+        subaccount_status,
+        onboarding_json
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -439,4 +448,54 @@ pub async fn delete_workspace(
     );
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOnboardingRequest {
+    pub onboarding_steps: Vec<OnboardingStep>
+}
+
+#[derive(Debug,Serialize)]
+pub struct OnboardingResponse {
+    pub onboarding_steps: Vec<OnboardingStep>
+}
+
+pub async fn update_onboarding(
+    State(state): State<AppState>,
+    ctx: WorkspaceContext,
+    Json(req): Json<UpdateOnboardingRequest>
+) -> AppResult<Json<OnboardingResponse>> {
+    if !ctx.role.is_admin_or_above() {
+        return Err(AppError::Forbidden("admin role required".into()));
+    }
+
+    let onboarding_json = serde_json::to_value(&req.onboarding_steps)?;
+
+    sqlx::query!(
+        "UPDATE workspaces SET onboarding_steps = $1 WHERE id = $2",
+        onboarding_json,
+        ctx.workspace_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(OnboardingResponse { onboarding_steps: req.onboarding_steps }))
+}
+
+pub async fn get_onboarding(
+    State(state): State<AppState>,
+    ctx: WorkspaceContext
+) -> AppResult<Json<OnboardingResponse>> {
+    let row = sqlx::query!(
+        "SELECT onboarding_steps FROM workspaces WHERE ID = $1",
+        ctx.workspace_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let onboarding_steps: Vec<OnboardingStep> = serde_json::from_value(row.onboarding_steps)
+    .map_err(|_| AppError::Internal("invalid onboarding_steps Json".into()))?;
+
+    Ok(Json(OnboardingResponse { onboarding_steps }))
 }

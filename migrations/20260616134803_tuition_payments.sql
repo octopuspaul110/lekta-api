@@ -100,4 +100,4 @@ CREATE INDEX idx_paystack_webhook_unprocessed ON paystack_webhook_events(receive
 CREATE TRIGGER set_updated_at_enrollments
 BEFORE UPDATE ON enrollments
 FOR EACH ROW
-EXECUTE FUNCTION update_updated_at_column();
+EXECUTE FUNCTION update_updated_at_column(); 
