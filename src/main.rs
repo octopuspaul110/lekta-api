@@ -63,7 +63,16 @@ async fn main() -> anyhow::Result<()> {
                 delete(lekta_api::workspaces::invitations_handlers::cancel_invitation))
             .route("/api/v1/invitations/{token}/accept",
                 post(lekta_api::workspaces::invitations_handlers::accept_invitation))
-            
+            .route("/api/v1/invitations/{slug}/onboarding", get(lekta_api::workspaces::handlers::get_onboarding)
+            .patch(lekta_api::workspaces::handlers::update_onboarding))
+            .route("/api/v1/workspaces/{slug}/channels", 
+            get(lekta_api::channels::handlers::list_channels)
+            .post(lekta_api::channels::handlers::list_channels))
+            .route("/api/v1/channels/{id}", 
+            get(lekta_api::channels::handlers::get_channel)
+            .patch(lekta_api::channels::handlers::update_channel)
+            )
+            .route("/api/v1/channels/{id}/archive", post(lekta_api::channels::handlers::archive_channel))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
