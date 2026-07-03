@@ -73,6 +73,18 @@ async fn main() -> anyhow::Result<()> {
             .patch(lekta_api::channels::handlers::update_channel)
             )
             .route("/api/v1/channels/{id}/archive", post(lekta_api::channels::handlers::archive_channel))
+            .route("/api/v1/channels/{id}/members", 
+            post(lekta_api::channels::member_handlers::add_or_join_channel))
+            .route("/api/v1/channels/{id}/members/{user_id}",
+       delete(lekta_api::channels::member_handlers::remove_channel_member))
+            .route("/api/v1/channels/{id}/read",
+       post(lekta_api::channels::member_handlers::mark_channel_read))
+       .route("/api/v1/channels/{id}/messages", 
+       get(lekta_api::channels::messages_handlers::list_messages)
+       .post(lekta_api::channels::messages_handlers::send_message))
+       .route("/api/v1/messages/{id}", patch(lekta_api::channels::messages_handlers::edit_message)
+       .delete(lekta_api::channels::messages_handlers::delete_message))
+       .route("/api/v1/messages/{id}/thread", get(lekta_api::channels::messages_handlers::get_thread))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
