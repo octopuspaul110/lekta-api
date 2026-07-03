@@ -404,7 +404,7 @@ pub async fn edit_message(
 
     let message = sqlx::query!(
         r#"
-        SELECT sender_user_id, created_at, deleted FROM messages where ID = $1
+        SELECT sender_user_id, created_at, deleted FROM messages WHERE id = $1
         "#,
         message_id
     )
@@ -460,7 +460,7 @@ pub async fn delete_message(
         WHERE m.id = $1
         "#,
         message_id,
-        &auth.user_id
+        auth.user_id
     )
     .fetch_optional(&state.db)
     .await?

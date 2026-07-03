@@ -85,6 +85,9 @@ async fn main() -> anyhow::Result<()> {
        .route("/api/v1/messages/{id}", patch(lekta_api::channels::messages_handlers::edit_message)
        .delete(lekta_api::channels::messages_handlers::delete_message))
        .route("/api/v1/messages/{id}/thread", get(lekta_api::channels::messages_handlers::get_thread))
+       .route("/api/v1/messages/{id}/reactions", post(lekta_api::channels::reactions_handlers::add_reaction))
+       .route("/api/v1/messages/{id}/reactions/{emoji}", delete(lekta_api::channels::reactions_handlers::remove_reaction))
+       .route("/api/v1/workspaces/{slug}/search", get(lekta_api::channels::search::search))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
