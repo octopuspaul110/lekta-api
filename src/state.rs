@@ -5,6 +5,8 @@ use redis::aio::ConnectionManager;
 
 use crate::config::{Config};
 use crate::error::{AppError, AppResult};
+use crate::payments::paystack_client::PaystackClient;
+
 
 #[derive(Clone)]
 pub struct AppState {
@@ -12,7 +14,7 @@ pub struct AppState {
     pub db : PgPool,
     pub redis : ConnectionManager,
     pub http : reqwest::Client,
-    // pub paystack: Arc<PaystackClient>,
+    pub paystack: Arc<PaystackClient>,
     // pub anthropic: Arc<AnthropicClient>,
     // pub s3: Arc<aws_sdk_s3::Client>,
     // pub ses: Arc<aws_sdk_ses::Client>,
@@ -41,8 +43,15 @@ impl AppState {
         .timeout(Duration::from_secs(30))
         .build()?;
 
-        Ok(
-            Self { config: Arc::new(config), db, redis, http }
-        )
+    let paystack = Arc::new(PaystackClient::new(
+        http.clone(), 
+        config.paystack_secret_key.clone(), 
+        config.paystack_base_url.clone()),
+    );
+
+    Ok(
+        Self { config: Arc::new(config), db, redis, http, paystack }
+    )
+
     }
 }
