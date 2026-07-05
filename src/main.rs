@@ -90,6 +90,7 @@ async fn main() -> anyhow::Result<()> {
        .route("/api/v1/workspaces/{slug}/search", get(lekta_api::channels::search::search))
        .route("api/v1/payments/banks", get(lekta_api::payments::onboarding_handlers::list_banks))
        .route("api/v1/payments/resolve_account", get(lekta_api::payments::onboarding_handlers::resolve_account))
+       .route("api/v1/workspaces/{slug}/onboarding/paystack", post(lekta_api::payments::onboarding_handlers::onboard_paystack))
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
