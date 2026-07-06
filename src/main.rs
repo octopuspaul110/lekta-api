@@ -91,6 +91,10 @@ async fn main() -> anyhow::Result<()> {
        .route("api/v1/payments/banks", get(lekta_api::payments::onboarding_handlers::list_banks))
        .route("api/v1/payments/resolve_account", get(lekta_api::payments::onboarding_handlers::resolve_account))
        .route("api/v1/workspaces/{slug}/onboarding/paystack", post(lekta_api::payments::onboarding_handlers::onboard_paystack))
+       .route("api/v1/workspaces/{slug}/tuition_plans", post(lekta_api::payments::tuition_handlers::create_tuition_plan).get(lekta_api::payments::tuition_handlers::list_tuition_plans))
+       .route("api/v1/tuition_plans/{id}", patch(lekta_api::payments::tuition_handlers::create_tuition_plan)
+       .delete(lekta_api::payments::tuition_handlers::list_tuition_plans))
+       
             .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
@@ -103,7 +107,6 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
-
 }
 
 async fn shutdown_signal() {
