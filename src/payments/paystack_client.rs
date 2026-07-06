@@ -218,7 +218,7 @@ impl PaystackClient {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TransactionStatus {
     pub reference: String,
     pub amount: i64,

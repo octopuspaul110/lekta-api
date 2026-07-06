@@ -96,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
        .delete(lekta_api::payments::tuition_handlers::list_tuition_plans))
        .route("/api/v1/workspaces/{slug}/enrollments", post(lekta_api::payments::enrollment_handlers::initiate_enrollment))
        .route("/api/v1/workspaces/{slug}/enrollments/manual", post(lekta_api::payments::enrollment_handlers::manual_enrollment))
+       .route("/api/v1/webhooks/paystack", post(lekta_api::payments::webhook_handlers::paystack_webhook))
        .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
