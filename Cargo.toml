@@ -52,6 +52,7 @@ google-cloud-auth = "0.17"
 google-cloud-token = "0.1"
 mime = "0.3"
 regex = "1"
+nanoid = "0.4"
 [dev-dependencies]
 tokio-test = "0.4"
 reqwest = "0.12"

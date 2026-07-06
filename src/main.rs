@@ -94,8 +94,9 @@ async fn main() -> anyhow::Result<()> {
        .route("api/v1/workspaces/{slug}/tuition_plans", post(lekta_api::payments::tuition_handlers::create_tuition_plan).get(lekta_api::payments::tuition_handlers::list_tuition_plans))
        .route("api/v1/tuition_plans/{id}", patch(lekta_api::payments::tuition_handlers::create_tuition_plan)
        .delete(lekta_api::payments::tuition_handlers::list_tuition_plans))
-       
-            .with_state(state);
+       .route("/api/v1/workspaces/{slug}/enrollments", post(lekta_api::payments::enrollment_handlers::initiate_enrollment))
+       .route("/api/v1/workspaces/{slug}/enrollments/manual", post(lekta_api::payments::enrollment_handlers::manual_enrollment))
+       .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
     let listener = TcpListener::bind(addr).await?;
