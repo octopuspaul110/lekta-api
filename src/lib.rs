@@ -6,3 +6,4 @@ pub mod workspaces;
 pub mod channels;
 pub mod payments;
 pub mod classes;
+pub mod tutors;

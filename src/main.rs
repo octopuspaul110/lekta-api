@@ -103,7 +103,23 @@ async fn main() -> anyhow::Result<()> {
        patch(lekta_api::classes::handlers::update_class)
        .get(lekta_api::classes::handlers::get_class)
        .delete(lekta_api::classes::handlers::cancel_class))
-
+       .route("/api/v1/classes/{id}/attendance", post(lekta_api::classes::handlers::mark_attendance))
+       .route("/api/v1/classes/{id}/checkin", post(lekta_api::classes::handlers::self_checkin))
+       .route("/api/v1/workspaces/{slug}/tutors",
+       get(lekta_api::tutors::handlers::list_tutors))
+       .route("/api/v1/workspaces/{slug}/tutors/{user_id}",
+            get(lekta_api::tutors::handlers::get_tutor_profile))
+        .route("/api/v1/workspaces/{slug}/tutors/{user_id}/profile",
+            post(lekta_api::tutors::handlers::upsert_tutor_profile))
+        .route("/api/v1/workspaces/{slug}/tutors/{user_id}/verify",
+            post(lekta_api::tutors::handlers::verify_tutor))
+        .route("/api/v1/workspaces/{slug}/tutors/{user_id}/photo-upload-url",
+            post(lekta_api::tutors::handlers::tutor_photo_upload_url))
+        .route("/api/v1/workspaces/{slug}/tutors/{user_id}/ratings",
+            get(lekta_api::tutors::ratings_handlers::list_ratings)
+            .post(lekta_api::tutors::ratings_handlers::create_rating))
+        .route("/api/v1/workspaces/{slug}/tutor-ratings/{rating_id}",
+            delete(lekta_api::tutors::ratings_handlers::delete_rating))
        .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
