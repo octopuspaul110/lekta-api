@@ -120,7 +120,20 @@ async fn main() -> anyhow::Result<()> {
             .post(lekta_api::tutors::ratings_handlers::create_rating))
         .route("/api/v1/workspaces/{slug}/tutor-ratings/{rating_id}",
             delete(lekta_api::tutors::ratings_handlers::delete_rating))
-       .with_state(state);
+        .route("/api/v1/workspaces/{slug}/assignments",
+       post(lekta_api::assignments::handlers::create_assignment)
+        .get(lekta_api::assignments::handlers::list_assignment))
+        .route("/api/v1/assignments/{id}",
+       patch(lekta_api::assignments::handlers::update_assignment)
+       .delete(lekta_api::assignments::handlers::delete_assignment))
+       .route("/api/v1/assignments/{id}/publish",
+       post(lekta_api::assignments::handlers::publish_assignment))
+       .route("/api/v1/assignments/{id}/submissions",
+       post(lekta_api::assignments::submissions_handlers::submit_assignment)
+       .get(lekta_api::assignments::submissions_handlers::list_submissions))
+       .route("/api/v1/submissions/{id}/grade",
+       post(lekta_api::assignments::submissions_handlers::grade_submission))
+        .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
     let listener = TcpListener::bind(addr).await?;
