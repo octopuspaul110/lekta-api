@@ -8,3 +8,4 @@ pub mod payments;
 pub mod classes;
 pub mod tutors;
 pub mod assignments;
+pub mod exams;
