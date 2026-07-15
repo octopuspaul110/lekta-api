@@ -144,6 +144,9 @@ async fn main() -> anyhow::Result<()> {
        .get(lekta_api::exams::questions_handlers::list_questions))
        .route("/api/v1/questions/{id}",
        delete(lekta_api::exams::questions_handlers::delete_question))
+       .route("/api/v1/workspaces/{slug}/exams", post(lekta_api::exams::exams_handlers::create_exam).get(lekta_api::exams::exams_handlers::list_exams))
+       .route("/api/v1/exams/{id}/publish", post(lekta_api::exams::exams_handlers::publish_exams))
+       .route("/api/v1/exams/{id}",delete(lekta_api::exams::exams_handlers::delete_exam))
         .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
