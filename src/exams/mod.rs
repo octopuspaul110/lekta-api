@@ -3,4 +3,6 @@ pub mod question_banks_handlers;
 pub mod questions_handlers;
 pub mod exams_handlers;
 pub mod selection;
+pub mod attempts_handlers;
+pub mod grading;
 
