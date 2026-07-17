@@ -113,8 +113,6 @@ async fn main() -> anyhow::Result<()> {
             post(lekta_api::tutors::handlers::upsert_tutor_profile))
         .route("/api/v1/workspaces/{slug}/tutors/{user_id}/verify",
             post(lekta_api::tutors::handlers::verify_tutor))
-        .route("/api/v1/workspaces/{slug}/tutors/{user_id}/photo-upload-url",
-            post(lekta_api::tutors::handlers::tutor_photo_upload_url))
         .route("/api/v1/workspaces/{slug}/tutors/{user_id}/ratings",
             get(lekta_api::tutors::ratings_handlers::list_ratings)
             .post(lekta_api::tutors::ratings_handlers::create_rating))
@@ -151,6 +149,8 @@ async fn main() -> anyhow::Result<()> {
        .route("/api/v1/exam-attempts/{id}", get(lekta_api::exams::attempts_handlers::get_attempt))
        .route("/api/v1/exam-attempts/{id}/answers", post(lekta_api::exams::attempts_handlers::submit_answer))
        .route("/api/v1/exam-attempts/{id}/submit", post(lekta_api::exams::attempts_handlers::submit_attempt))
+       .route("/api/v1/uploads/request", post(lekta_api::storage::handlers::request_upload))
+       .route("/api/v1/uploads/download-url", get(lekta_api::storage::handlers::get_download_url))
         .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));
