@@ -492,6 +492,15 @@ pub async fn verify_email(
 
     sqlx::query!(
         "
+            UPDATE users SET email_verified = TRUE WHERE id = $1
+        ",
+        token_row.user_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "
             UPDATE email_verification_tokens SET used = TRUE, used_at = NOW() WHERE id = $1
         ",
         token_row.id

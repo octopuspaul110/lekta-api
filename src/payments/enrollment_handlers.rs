@@ -172,6 +172,7 @@ pub struct ManualEnrollmentResponse {
     pub starts_at: chrono::DateTime<Utc>,
     pub ends_at: chrono::DateTime<Utc>,
 }
+
 pub async fn manual_enrollment(
     State(state): State<AppState>,
     ctx: WorkspaceContext,

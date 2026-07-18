@@ -6,7 +6,6 @@ use tracing;
 
 pub type AppResult<T> = Result<T, AppError>;
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("Bad request: {0}")]

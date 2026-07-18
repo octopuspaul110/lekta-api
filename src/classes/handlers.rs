@@ -401,3 +401,160 @@ pub async fn cancel_class(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+
+#[derive(Debug, Deserialize)]
+pub struct AttendanceEntry {
+    pub student_user_id: Uuid,
+    pub status: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MarkAttendanceRequest {
+    pub entries: Vec<AttendanceEntry>
+}
+
+pub async fn mark_attendance(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(class_id): Path<Uuid>,
+    Json(req): Json<MarkAttendanceRequest>,
+) -> AppResult<StatusCode> {
+    // Fetch class and verify requester is tutor of the class or is admin
+    let class =sqlx::query!(
+        r#"
+        SELECT c.workspace_id, c.tutor_user_id, wm.role as "role?"
+        FROM classes c
+        LEFT JOIN workspace_members wm
+            ON wm.workspace_id = c.workspace_id AND wm.user_id = $2
+        WHERE c.id = $1
+        "#,
+        class_id,
+        auth.user_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("class not found".into()))?;
+
+    let role = class.role.ok_or_else(|| AppError::NotFound("class not found".into()))?;
+
+    let is_admin = matches!(role.as_str(), "proprietor" | "admin");
+    let is_tutor = class.tutor_user_id == auth.user_id;
+
+    if !is_admin && !is_tutor {
+        return Err(AppError::Forbidden("only assigned tutor or admin can mark attendance".into()));
+    }
+
+    // Validate statuses
+    for entry in &req.entries {
+        if !matches!(entry.status.as_str(), "present" | "absent" | "late" | "excused") {
+            return Err(AppError::BadRequest(format!("invalid status: {}", entry.status)));
+        }
+    }
+
+    let mut tx = state.db.begin().await?;
+
+    for entry in &req.entries {
+        sqlx::query!(
+            r#"
+            INSERT INTO class_attendance (class_id, student_user_id, status, marked_by_user_id, notes)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (class_id, student_user_id) DO UPDATE
+            SET status = EXCLUDED.status,
+                marked_by_user_id = EXCLUDED.marked_by_user_id,
+                notes = EXCLUDED.notes,
+                marked_at = NOW()
+            "#,
+            class_id,
+            entry.student_user_id,
+            entry.status,
+            auth.user_id,
+            entry.notes
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    tracing::info!(
+        class_id = %class_id,
+        count = req.entries.len(),
+        "attendance marked"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn self_checkin(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(class_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    let class = sqlx::query!(
+        r#"
+        SELECT c.workspace_id, c.starts_at, c.ends_at, c.self_checkin_enabled,
+        wm.role as "role?"
+        FROM classes c
+        LEFT JOIN workspace_members wm
+            ON wm.workspace_id = c.workspace_id AND wm.user_id = $2
+        WHERE c.id = $1
+        "#,
+        class_id,
+        auth.user_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("class not found".into()))?;
+
+    class.role.ok_or_else(|| AppError::NotFound("class not found".into()))?;
+
+    if !class.self_checkin_enabled {
+        return Err(AppError::BadRequest("self check-in not enabled".into()));
+    }
+
+    let now = Utc::now();
+    let earliest_checkin = class.starts_at - chrono::Duration::minutes(30);
+
+    if now < earliest_checkin {
+        return Err(AppError::BadRequest("check-in window not yet open".into()));
+    }
+
+    if now > class.ends_at {
+        return Err(AppError::BadRequest("check-in window closed".into()));
+    }
+
+    // Determine status: on time = present, > 15 min after start = late
+    let status = if now > class.starts_at + chrono::Duration::minutes(15){
+        "late"
+    } else {
+        "present"
+    };
+
+    sqlx::query!(
+        r#"
+        INSERT INTO class_attendance (class_id, student_user_id, status, marked_by_user_id, check_in_time)
+        VALUES ($1, $2, $3, $2, $4)
+        ON CONFLICT (class_id, student_user_id) DO UPDATE
+        SET status = EXCLUDED.status,
+            check_in_time = EXCLUDED.check_in_time,
+            marked_at = NOW()
+        "#,
+        class_id,
+        auth.user_id,
+        status,
+        now
+    )
+    .execute(&state.db)
+    .await?;
+
+    tracing::info!(
+        class_id = %class_id,
+        user_id = %auth.user_id,
+        status = %status,
+        "student self-checked in"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}

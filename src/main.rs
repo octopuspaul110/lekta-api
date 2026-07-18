@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
-use lekta_api::{config::Config, state::AppState};
-use tokio::{net::TcpListener, signal::{self, unix::SignalKind}};
+use lekta_api::{config::Config, jobs::{scheduler::{run_scheduler}, worker::run_worker}, state::AppState};
+use tokio::{net::TcpListener, signal::{self, unix::SignalKind}, sync::broadcast};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use axum::{Router, routing::{delete, get, patch, post}};
 
@@ -37,6 +37,21 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(config).await?;
     tracing::info!("Application state initialized, starting lekta-api...");
 
+    let (shutdown_tx, _) = broadcast::channel::<()>(4);
+
+    // Spawn one worker (add more if throughput needs it)
+    let worker_state = state.clone();
+    let worker_shutdown = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        run_worker(worker_state, worker_shutdown).await
+    });
+
+    let scheduler_state = state.clone();
+    let scheduler_shutdown = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        run_scheduler(scheduler_state, scheduler_shutdown).await
+    });
+
     let app = Router::new()
             .route("/api/v1/health", get(|| async {"ok"}))
             .route("/api/v1/auth/register", post(lekta_api::auth::handlers::register))
@@ -63,22 +78,22 @@ async fn main() -> anyhow::Result<()> {
                 delete(lekta_api::workspaces::invitations_handlers::cancel_invitation))
             .route("/api/v1/invitations/{token}/accept",
                 post(lekta_api::workspaces::invitations_handlers::accept_invitation))
-            .route("/api/v1/invitations/{slug}/onboarding", get(lekta_api::workspaces::handlers::get_onboarding)
+            .route("/api/v1/workspaces/{slug}/onboarding", get(lekta_api::workspaces::handlers::get_onboarding)
             .patch(lekta_api::workspaces::handlers::update_onboarding))
             .route("/api/v1/workspaces/{slug}/channels", 
             get(lekta_api::channels::handlers::list_channels)
-            .post(lekta_api::channels::handlers::list_channels))
+            .post(lekta_api::channels::handlers::create_channel))
             .route("/api/v1/channels/{id}", 
             get(lekta_api::channels::handlers::get_channel)
             .patch(lekta_api::channels::handlers::update_channel)
             )
             .route("/api/v1/channels/{id}/archive", post(lekta_api::channels::handlers::archive_channel))
             .route("/api/v1/channels/{id}/members", 
-            post(lekta_api::channels::member_handlers::add_or_join_channel))
+            post(lekta_api::channels::members_handlers::add_or_join_channel))
             .route("/api/v1/channels/{id}/members/{user_id}",
-       delete(lekta_api::channels::member_handlers::remove_channel_member))
+       delete(lekta_api::channels::members_handlers::remove_channel_member))
             .route("/api/v1/channels/{id}/read",
-       post(lekta_api::channels::member_handlers::mark_channel_read))
+       post(lekta_api::channels::members_handlers::mark_channel_read))
        .route("/api/v1/channels/{id}/messages", 
        get(lekta_api::channels::messages_handlers::list_messages)
        .post(lekta_api::channels::messages_handlers::send_message))
@@ -88,12 +103,12 @@ async fn main() -> anyhow::Result<()> {
        .route("/api/v1/messages/{id}/reactions", post(lekta_api::channels::reactions_handlers::add_reaction))
        .route("/api/v1/messages/{id}/reactions/{emoji}", delete(lekta_api::channels::reactions_handlers::remove_reaction))
        .route("/api/v1/workspaces/{slug}/search", get(lekta_api::channels::search::search))
-       .route("api/v1/payments/banks", get(lekta_api::payments::onboarding_handlers::list_banks))
-       .route("api/v1/payments/resolve_account", get(lekta_api::payments::onboarding_handlers::resolve_account))
-       .route("api/v1/workspaces/{slug}/onboarding/paystack", post(lekta_api::payments::onboarding_handlers::onboard_paystack))
-       .route("api/v1/workspaces/{slug}/tuition_plans", post(lekta_api::payments::tuition_handlers::create_tuition_plan).get(lekta_api::payments::tuition_handlers::list_tuition_plans))
-       .route("api/v1/tuition_plans/{id}", patch(lekta_api::payments::tuition_handlers::create_tuition_plan)
-       .delete(lekta_api::payments::tuition_handlers::list_tuition_plans))
+       .route("/api/v1/payments/banks", get(lekta_api::payments::onboarding_handlers::list_banks))
+       .route("/api/v1/payments/resolve-account", post(lekta_api::payments::onboarding_handlers::resolve_account))
+       .route("/api/v1/workspaces/{slug}/onboarding/paystack", post(lekta_api::payments::onboarding_handlers::onboard_paystack))
+       .route("/api/v1/workspaces/{slug}/tuition-plans", post(lekta_api::payments::tuition_handlers::create_tuition_plan).get(lekta_api::payments::tuition_handlers::list_tuition_plans))
+       .route("/api/v1/tuition_plans/{id}", patch(lekta_api::payments::tuition_handlers::update_tution_plan)
+       .delete(lekta_api::payments::tuition_handlers::delete_tution_plan))
        .route("/api/v1/workspaces/{slug}/enrollments", post(lekta_api::payments::enrollment_handlers::initiate_enrollment))
        .route("/api/v1/workspaces/{slug}/enrollments/manual", post(lekta_api::payments::enrollment_handlers::manual_enrollment))
        .route("/api/v1/webhooks/paystack", post(lekta_api::payments::webhook_handler::paystack_webhook))
@@ -120,12 +135,12 @@ async fn main() -> anyhow::Result<()> {
             delete(lekta_api::tutors::ratings_handlers::delete_rating))
         .route("/api/v1/workspaces/{slug}/assignments",
        post(lekta_api::assignments::handlers::create_assignment)
-        .get(lekta_api::assignments::handlers::list_assignment))
+        .get(lekta_api::assignments::handlers::list_assignments))
         .route("/api/v1/assignments/{id}",
        patch(lekta_api::assignments::handlers::update_assignment)
        .delete(lekta_api::assignments::handlers::delete_assignment))
        .route("/api/v1/assignments/{id}/publish",
-       post(lekta_api::assignments::handlers::publish_assignment))
+       post(lekta_api::assignments::handlers::publish_assignments))
        .route("/api/v1/assignments/{id}/submissions",
        post(lekta_api::assignments::submissions_handlers::submit_assignment)
        .get(lekta_api::assignments::submissions_handlers::list_submissions))
@@ -159,13 +174,14 @@ async fn main() -> anyhow::Result<()> {
     // let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
     axum::serve(listener, app)
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(shutdown_signal(shutdown_tx.clone()))
     .await?;
 
     Ok(())
 }
 
-async fn shutdown_signal() {
+
+async fn shutdown_signal(shutdown_tx: broadcast::Sender<()>) {
     let ctrl_c = async {
         signal::ctrl_c().await.ok();
     };
@@ -178,5 +194,5 @@ async fn shutdown_signal() {
 
     tokio::select! {_ = ctrl_c => {}, _ = terminate => {}}
     tracing::info!("Shutdown signal received, finishing in-flight requests...");
-
+    let _ = shutdown_tx.send(());
 }

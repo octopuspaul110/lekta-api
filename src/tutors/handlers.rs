@@ -249,17 +249,3 @@ pub async fn verify_tutor(
 
     Ok(StatusCode::NO_CONTENT)
 }
-
-pub async fn tutor_photo_upload_url(
-    State(_state): State<AppState>,
-    ctx: WorkspaceContext,
-    Path((_slug, tutor_user_id)): Path<(String, Uuid)>,
-) -> AppResult<StatusCode> {
-    // TODO: generate presigned S3 URL once S3 client is wired
-    tracing::info!(
-        workspace_id = %ctx.workspace_id,
-        tutor_user_id = %tutor_user_id,
-        "photo upload URL requested (TODO: S3)"
-    );
-    Err(AppError::ServiceUnavailable("photo upload not yet implemented".into()))
-}

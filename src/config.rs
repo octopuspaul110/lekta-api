@@ -23,6 +23,7 @@ pub enum Environment {
     Staging,
     Production
 }
+
 impl FromStr for Environment {
     type Err = ();
 
