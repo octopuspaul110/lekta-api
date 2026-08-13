@@ -166,6 +166,9 @@ async fn main() -> anyhow::Result<()> {
        .route("/api/v1/exam-attempts/{id}/submit", post(lekta_api::exams::attempts_handlers::submit_attempt))
        .route("/api/v1/uploads/request", post(lekta_api::storage::handlers::request_upload))
        .route("/api/v1/uploads/download-url", get(lekta_api::storage::handlers::get_download_url))
+       .route("/api/v1/devices", post(lekta_api::notifications::handlers::register_device))
+       .route("/api/vi/devices/{token}", delete(lekta_api::notifications::handlers::unregister_device))
+       .route("/api/v1/notifications/{id}/read", post(lekta_api::notifications::handlers::mark_read))
         .with_state(state);
     
     let addr = SocketAddr::from(([0,0,0,0],port));

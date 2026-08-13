@@ -13,13 +13,12 @@ pub async fn dispatch(state: &AppState, payload: JobPayload) -> AppResult<()> {
             Ok(())
         },
         JobPayload::SendPushNotification { 
-            user_id, 
-            title, 
+            user_id,
+            title,
             body, 
             data 
         } => {
-            tracing::info!(user_id = %user_id, title = %title, body = %body, data = %data, "TODO: send push notification via FCM");
-            Ok(())
+            crate::notifications::dispatcher::notify_users(state, user_id, None, &title, &body, Some(data), "push_notification").await
         },
         JobPayload::MaterializeClassOccurrences { 
             class_id, 

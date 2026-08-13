@@ -24,7 +24,7 @@ pub async fn run_worker(state: AppState, mut shutdown: broadcast::Receiver<()>) 
             Ok(true) => continue,
             Ok(false) => continue, // no jobs available, sleep next iteration
             Err(e) => {
-                tracing::error!(error = ?e, "worker iteration error");
+                tracing::error!(error = ?e, "worker iteration error"); 
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
@@ -35,7 +35,7 @@ pub async fn claim_and_run_one(state: &AppState) -> AppResult<bool> {
     let claimed = sqlx::query!(
         r#"
         UPDATE jobs
-        SET status = 'running', started_at = NOW(), attempts = attempts + 1
+        SET status = 'processing', started_at = NOW(), attempts = attempts + 1
         WHERE id = (
             SELECT id FROM jobs
             WHERE status = 'pending' AND run_at < NOW()

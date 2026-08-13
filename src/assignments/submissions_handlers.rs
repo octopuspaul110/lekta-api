@@ -293,11 +293,22 @@ pub async fn grade_submission(
     .execute(&state.db)
     .await?;
 
+    crate::jobs::worker::enqueue(
+        &state, 
+        crate::jobs::types::JobPayload::SendPushNotification { 
+            user_id: submission_id, 
+            title: "Assignment graded".to_string(), 
+            body: format!("you scored {} out of {}", req.score, submission.max_score), 
+            data: serde_json::json!({ "submission_id": submission_id }) 
+        }, 
+        None
+    ).await?;
+
     tracing::info!(
         submission_id = %submission_id,
         graded_by = %auth.user_id,
         score = req.score,
-        "submission graded t(TODO: notify student)"
+        "submission graded (TODO: notify student)"
     );
 
     Ok(StatusCode::NO_CONTENT)

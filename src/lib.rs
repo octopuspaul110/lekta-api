@@ -11,3 +11,4 @@ pub mod assignments;
 pub mod exams;
 pub mod storage;
 pub mod jobs;
+pub mod notifications;

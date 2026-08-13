@@ -5,7 +5,7 @@ use serde::Deserialize;
 use sha2::Sha512;
 use subtle::ConstantTimeEq;
 
-use crate::{error::{AppError, AppResult}, state::AppState};
+use crate::{error::{AppError, AppResult}, jobs::types::JobPayload, state::AppState};
 
 type HmacSha512 = Hmac<Sha512>;
 
@@ -170,7 +170,7 @@ async fn process_charge_success(state: &AppState, payload: &WebhookPayload) -> A
     // Find the payment
     let payment = sqlx::query!(
         r#"
-        SELECT id, enrollment_id, workspace_id, amount_kobo, platform_fee_kobo, status
+        SELECT id, enrollment_id, payer_user_id, workspace_id, amount_kobo, platform_fee_kobo, status
         FROM payments WHERE reference = $1
         "#,
         payload.data.reference
@@ -250,6 +250,19 @@ async fn process_charge_success(state: &AppState, payload: &WebhookPayload) -> A
     );
 
     // TODO: enqueue notification jobs (send receipt email, push notification to payer + workspace admin)
+    crate::jobs::worker::enqueue(
+        state,
+        JobPayload::SendPushNotification {
+            user_id: payment.payer_user_id,
+            title: "payment successful".into(),
+            body: format!("You have successfully enrolled for this course, your enrollment is now active."),
+            data: serde_json::json!({
+                "enrollment_id": payment.enrollment_id,
+                "type": "payment.success"
+            }),
+        }, 
+        None
+    ).await?;
 
     Ok(()) 
 }

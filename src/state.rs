@@ -5,6 +5,7 @@ use redis::aio::ConnectionManager;
 
 use crate::config::{Config};
 use crate::error::{AppError, AppResult};
+use crate::notifications::fcm_client::FcmClient;
 use crate::payments::paystack_client::PaystackClient;
 use crate::storage::s3_client::S3Client;
 
@@ -19,7 +20,7 @@ pub struct AppState {
     // pub anthropic: Arc<AnthropicClient>,
     pub s3          : Arc<S3Client>,
     // pub ses: Arc<aws_sdk_ses::Client>,
-    // pub fcm: Arc<FcmClient>,
+    pub fcm: Arc<FcmClient>,
 }
 impl AppState {
     pub async fn new(config : Config) -> AppResult<Self> {
@@ -54,8 +55,16 @@ impl AppState {
             S3Client::new(config.s3_bucket.clone(), config.aws_region.clone()).await?
         );
 
+        let fcm = Arc::new(
+            FcmClient::new(
+                http.clone(),
+                config.firebase_service_account_json.clone(),
+                config.firebase_project_id.clone(),
+            ).await?
+        );
+
         Ok(
-            Self { config: Arc::new(config), db, redis, http, paystack, s3 }
+            Self { config: Arc::new(config), db, redis, http, paystack, s3, fcm }
         )
     
     }
